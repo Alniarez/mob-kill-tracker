@@ -6,3 +6,4 @@
 ## SavedVariables: MobKillTrackerDB
 
 MobKillTracker.lua
+MobKillTracker_Options.lua

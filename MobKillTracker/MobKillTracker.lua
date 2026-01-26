@@ -2,49 +2,26 @@ local ADDON_NAME = ...
 local MKT = CreateFrame("Frame")
 
 -- Configuration ------------------------------
-local DEBUG = true
+local DEBUG = false
 
 -- Runtime-only caches ------------------------------
-local NPCNameCache = {}
 local SessionKills = {}
 
 -- Helper functions ------------------------------
 local function GetKillColor(total)
 	if total >= 2000 then
 		return 1.00, 0.50, 0.00 -- orange
-	elseif total >= 500 then
+	elseif total >= 800 then
 		return 0.64, 0.21, 0.93 -- purple
-	elseif total >= 100 then
+	elseif total >= 300 then
 		return 0.00, 0.44, 0.87 -- blue
-	elseif total >= 20 then
+	elseif total >= 120 then
 		return 0.10, 0.80, 0.10 -- green
-	elseif total >= 5 then
-		return 0.60, 0.60, 0.60 -- gray
-	else
+	elseif total >= 30 then
 		return 1.00, 1.00, 1.00 -- white
+	else
+		return 0.60, 0.60, 0.60 -- gray
 	end
-end
-
-local function TryCacheNPCName(unit)
-	if not UnitExists(unit) then
-		return
-	end
-
-	local npcID = UnitCreatureID(unit)
-	if not npcID then
-		return
-	end
-
-	local name = UnitName(unit)
-	if not name then
-		return
-	end
-
-	if not canaccessvalue(name) then
-		return
-	end
-
-	NPCNameCache[npcID] = name
 end
 
 local function GetNPCIDFromGUID(guid)
@@ -74,23 +51,24 @@ local function InitDB()
 	MobKillTrackerDB.total = MobKillTrackerDB.total or {}
 	MobKillTrackerDB.characters = MobKillTrackerDB.characters or {}
 
+	if MobKillTrackerDB.options == nil then
+		MobKillTrackerDB.options = {}
+	end
+
+	if Settings.SetValue and MobKillTrackerDB.options.showSessionInTooltip ~= nil then
+		Settings.SetValue("MKT_SHOW_SESSION_TOOLTIP", MobKillTrackerDB.options.showSessionInTooltip)
+	end
+
 	CHARACTER_KEY = UnitName("player") .. "-" .. GetNormalizedRealmName()
 	MobKillTrackerDB.characters[CHARACTER_KEY] = MobKillTrackerDB.characters[CHARACTER_KEY] or { kills = {} }
 end
 
 -- Kill tracking ------------------------------
-local function OnPartyKill()
-	local guid = UnitGUID("target")
-	if not guid then
-		return
-	end
-
-	local npcID = GetNPCIDFromGUID(guid)
+local function OnPartyKill(_attackerGUID, targetGUID)
+	local npcID = targetGUID and GetNPCIDFromGUID(targetGUID)
 	if not npcID then
 		return
 	end
-
-	TryCacheNPCName("target")
 
 	SessionKills[npcID] = (SessionKills[npcID] or 0) + 1
 
@@ -100,9 +78,33 @@ local function OnPartyKill()
 	local charKills = MobKillTrackerDB.characters[CHARACTER_KEY].kills
 	charKills[npcID] = (charKills[npcID] or 0) + 1
 
-	DebugPrint(
-		("NPC %d kills (session %d): %d / %d"):format(npcID, SessionKills[npcID], charKills[npcID], total[npcID])
-	)
+	if DEBUG then
+		DebugPrint(
+			("NPC %d kills (session %d): %d / %d"):format(npcID, SessionKills[npcID], charKills[npcID], total[npcID])
+		)
+	end
+end
+
+-- MobKillTracker logic ------------------------------
+MobKillTracker = {}
+function MobKillTracker.DeleteAllData()
+	MobKillTrackerDB.total = {}
+
+	for _, char in pairs(MobKillTrackerDB.characters) do
+		char.kills = {}
+	end
+
+	SessionKills = {}
+
+	DebugPrint("All data reset.")
+end
+
+function MobKillTracker.DeletedCharacterData()
+	if MobKillTrackerDB.characters[CHARACTER_KEY] then
+		MobKillTrackerDB.characters[CHARACTER_KEY].kills = {}
+	end
+
+	DebugPrint("Character data reset.")
 end
 
 -- Tooltip  ------------------------------
@@ -138,7 +140,25 @@ local function AddKillLine(tooltip)
 	local charKills = MobKillTrackerDB.characters[CHARACTER_KEY].kills[npcID] or 0
 
 	local r, g, b = GetKillColor(total)
-	tooltip:AddDoubleLine("Kills", ("%d / %d"):format(charKills, total), 0.7, 0.7, 0.7, r, g, b)
+	local rightText = ("%d / %d"):format(charKills, total)
+
+	if Settings.GetValue("MKT_SHOW_SESSION_TOOLTIP") then
+		local session = SessionKills[npcID] or 0
+		if session > 0 then
+			rightText = rightText .. (" |cff66ccff(session %d)|r"):format(session)
+		end
+	end
+
+	tooltip:AddDoubleLine(
+		"Kills",
+		rightText,
+		0.7,
+		0.7,
+		0.7, -- left label color
+		r,
+		g,
+		b -- right text color
+	)
 end
 
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, AddKillLine)
@@ -149,57 +169,37 @@ SLASH_MOBKILLTRACKER1 = "/mkt"
 SlashCmdList["MOBKILLTRACKER"] = function(msg)
 	msg = msg:lower()
 
-	if msg == "reset all" then
-		MobKillTrackerDB.total = {}
-		for _, char in pairs(MobKillTrackerDB.characters) do
-			char.kills = {}
-		end
-		print("MobKillTracker: all data reset.")
+	local prefix = "|cff33ff99MobKillTracker:|r "
+
+	if msg == "delete all" then
+		MobKillTracker.DeleteAllData()
+		print(prefix .. "|cffff5555all data deleted.|r")
 		return
 	end
 
-	if msg == "reset char" then
-		MobKillTrackerDB.characters[CHARACTER_KEY].kills = {}
-		print("MobKillTracker: character data reset.")
+	if msg == "delete character" or msg == "delete char" then
+		MobKillTracker.DeleteCharacterData()
+		print(prefix .. "|cffff5555character data deleted.|r")
 		return
 	end
 
-	if msg == "reset target" then
+	if msg == "delete target" or msg == "delete tar" then
 		local guid = UnitGUID("target")
 		local npcID = guid and GetNPCIDFromGUID(guid)
 		if npcID then
 			MobKillTrackerDB.total[npcID] = nil
 			MobKillTrackerDB.characters[CHARACTER_KEY].kills[npcID] = nil
-			print("MobKillTracker: target NPC reset.")
+			SessionKills[npcID] = nil
+			print(prefix .. ("|cffffaa00target NPC |cff00ccff%d|r |cffff5555deleted.|r"):format(npcID))
 		else
-			print("MobKillTracker: no valid NPC targeted.")
+			print(prefix .. "|cffff3333no valid NPC targeted.|r")
 		end
 		return
 	end
 
-	if msg == "session" then
-		print("|cff33ff99MobKillTracker — Session kills|r")
-
-		if not next(SessionKills) then
-			print("No kills recorded this session.")
-			return
-		end
-
-		for npcID, count in pairs(SessionKills) do
-			local name = NPCNameCache[npcID]
-			if name then
-				print(("%s — %d kill%s"):format(name, count, count == 1 and "" or "s"))
-			else
-				print(("NPC ID %d — %d kill%s"):format(npcID, count, count == 1 and "" or "s"))
-			end
-		end
-
-		return
-	end
-
-	local resetID = msg:match("^reset%s+(%d+)$")
-	if resetID then
-		local npcID = tonumber(resetID)
+	local deleteID = msg:match("^delete%s+(%d+)$")
+	if deleteID then
+		local npcID = tonumber(deleteID)
 		MobKillTrackerDB.total[npcID] = nil
 
 		local charData = MobKillTrackerDB.characters[CHARACTER_KEY]
@@ -207,28 +207,29 @@ SlashCmdList["MOBKILLTRACKER"] = function(msg)
 			charData.kills[npcID] = nil
 		end
 		SessionKills[npcID] = nil
-		NPCNameCache[npcID] = nil
 
-		print(("MobKillTracker: NPC ID %d reset."):format(npcID))
+		print(prefix .. ("|cffffaa00NPC ID |cff00ccff%d|r |cffff5555deleted.|r"):format(npcID))
 		return
 	end
 
+	-- Help
 	print("|cff33ff99MobKillTracker commands:|r")
-	print("/mkt reset all - reset all characters")
-	print("/mkt reset char - reset current character")
-	print("/mkt reset target - reset current target NPC")
-	print("/mkt reset <ID> - reset a specific NPC by ID")
-	print("/mkt session - show kills this session")
+
+	print("|cffffff00/mkt delete all|r " .. "|cffbbbbbb- delete all characters|r")
+	print("|cffffff00/mkt delete character|r " .. "|cffbbbbbb- delete current character|r")
+	print("|cffffff00/mkt delete target|r " .. "|cffbbbbbb- delete current target NPC|r")
+	print("|cffffff00/mkt delete |cff00ccff<ID>|r " .. "|cffbbbbbb- delete a specific NPC by ID|r")
 end
 
 -- Events ------------------------------
-local function OnEvent(_, event)
+local function OnEvent(_, event, ...)
 	if event == "PLAYER_LOGIN" then
 		InitDB()
 		MKT:RegisterEvent("PARTY_KILL")
 		DebugPrint("Loaded.")
 	elseif event == "PARTY_KILL" then
-		OnPartyKill()
+		local attackerGUID, targetGUID = ...
+		OnPartyKill(attackerGUID, targetGUID)
 	end
 end
 
