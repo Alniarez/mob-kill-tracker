@@ -1,7 +1,7 @@
 ## Interface: 120000
 ## Title: Mob Kill Count
 ## Notes: Tracks how many times you have killed specific mobs.
-## Version: 0.1
+## Version: 1.0
 ## Author: Alniarez
 ## SavedVariables: MobKillTrackerDB
 
