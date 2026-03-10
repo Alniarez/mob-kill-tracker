@@ -1,9 +1,24 @@
-## Interface: 120000
+## Interface: 120001
 ## Title: Mob Kill Count
 ## Notes: Tracks how many times you have killed specific mobs.
-## Version: 1.0
+## Version: 1.1
 ## Author: Alniarez
 ## SavedVariables: MobKillTrackerDB
+
+## IconTexture: Interface\Icons\Inv_misc_noteblank2b
+
+## Category: User Interface
+## Category-deDE: Benutzerinterface
+## Category-esES: Interfaz de usuario
+## Category-esMX: Interfaz de usuario
+## Category-frFR: Interface utilisateur
+## Category-itIT: Interfaccia utente
+## Category-koKR: 사용자 인터페이스
+## Category-ptBR: Interface do usuário
+## Category-ruRU: Интерфейс пользователя
+## Category-zhCN: 用户界面
+## Category-zhTW: 使用者介面
+
 
 MobKillTracker.lua
 MobKillTracker_Options.lua

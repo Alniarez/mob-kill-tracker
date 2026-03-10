@@ -35,6 +35,43 @@ local function GetNPCIDFromGUID(guid)
 	end
 end
 
+local function GetNPCNameFromGUID(guid)
+	if not guid or issecretvalue(guid) then
+		return nil
+	end
+
+	local function GetNameIfMatch(unit)
+		if UnitExists(unit) and UnitGUID(unit) == guid then
+			local name = UnitName(unit)
+			if name and name ~= "" then
+				return name
+			end
+		end
+	end
+
+	-- target
+	local name = GetNameIfMatch("target")
+	if name then
+		return name
+	end
+
+	-- mouseover
+	name = GetNameIfMatch("mouseover")
+	if name then
+		return name
+	end
+
+	-- nameplates
+	for i = 1, 40 do
+		name = GetNameIfMatch("nameplate" .. i)
+		if name then
+			return name
+		end
+	end
+
+	return nil
+end
+
 local function DebugPrint(...)
 	if not DEBUG then
 		return
@@ -47,9 +84,10 @@ local CHARACTER_KEY
 
 local function InitDB()
 	MobKillTrackerDB = MobKillTrackerDB or {}
-	MobKillTrackerDB.version = MobKillTrackerDB.version or 1
+	MobKillTrackerDB.version = MobKillTrackerDB.version or 1 -- Storage DB version
 	MobKillTrackerDB.total = MobKillTrackerDB.total or {}
 	MobKillTrackerDB.characters = MobKillTrackerDB.characters or {}
+	MobKillTrackerDB.names = MobKillTrackerDB.names or {}
 
 	if MobKillTrackerDB.options == nil then
 		MobKillTrackerDB.options = {}
@@ -59,6 +97,11 @@ local function InitDB()
 		Settings.SetValue("MKT_SHOW_SESSION_TOOLTIP", MobKillTrackerDB.options.showSessionInTooltip)
 	end
 
+
+    if MobKillTrackerDB.options.showCreatureID ~= nil then
+        Settings.SetValue("MKT_SHOW_CREATURE_ID", MobKillTrackerDB.options.showCreatureID)
+    end
+
 	CHARACTER_KEY = UnitName("player") .. "-" .. GetNormalizedRealmName()
 	MobKillTrackerDB.characters[CHARACTER_KEY] = MobKillTrackerDB.characters[CHARACTER_KEY] or { kills = {} }
 end
@@ -66,6 +109,7 @@ end
 -- Kill tracking ------------------------------
 local function OnPartyKill(_attackerGUID, targetGUID)
 	local npcID = targetGUID and GetNPCIDFromGUID(targetGUID)
+
 	if not npcID then
 		return
 	end
@@ -78,9 +122,23 @@ local function OnPartyKill(_attackerGUID, targetGUID)
 	local charKills = MobKillTrackerDB.characters[CHARACTER_KEY].kills
 	charKills[npcID] = (charKills[npcID] or 0) + 1
 
+	-- Best-effort name catalog ------------------------------
+    local name = GetNPCNameFromGUID(targetGUID)
+
+    local names = MobKillTrackerDB.names
+    local existing = names[npcID]
+
+    if name and name ~= "" then
+    	-- Prefer a real name over Unknown, but do not overwrite existing names
+    	if not existing or existing == "Unknown" then
+    		names[npcID] = name
+    	end
+    end
+
 	if DEBUG then
+        local displayName = name or catalogName or "Unknown"
 		DebugPrint(
-			("NPC %d kills (session %d): %d / %d"):format(npcID, SessionKills[npcID], charKills[npcID], total[npcID])
+			("NPC %s (%d) kills (session %d): %d / %d"):format(displayName, npcID, SessionKills[npcID], charKills[npcID], total[npcID])
 		)
 	end
 end
@@ -132,6 +190,19 @@ local function AddKillLine(tooltip)
 		return
 	end
 
+    -- Debug: show NPC ID ------------------------------
+    if MobKillTrackerDB
+        and MobKillTrackerDB.options
+        and MobKillTrackerDB.options.showCreatureID
+    then
+        tooltip:AddDoubleLine(
+            "Creature ID",
+            ("|cff00ccff%d|r"):format(npcID),
+            0.7, 0.7, 0.7,
+            1.0, 1.0, 1.0
+        )
+    end
+
 	local total = MobKillTrackerDB.total[npcID]
 	if not total or total <= 0 then
 		return
@@ -159,6 +230,8 @@ local function AddKillLine(tooltip)
 		g,
 		b -- right text color
 	)
+
+
 end
 
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, AddKillLine)
