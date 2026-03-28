@@ -289,7 +289,7 @@ SlashCmdList["MOBKILLTRACKER"] = function(msg)
 	-- Help
 	print("|cff33ff99MobKillTracker commands:|r")
 
-	print("|cffffff00/mkt list|r " .. "|cffbbbbbb- toggle the kill list window|r")
+	print("|cffffff00/mkt list|r " .. "|cffbbbbbb- show the kill list window|r")
 	print("|cffffff00/mkt delete all|r " .. "|cffbbbbbb- delete all characters|r")
 	print("|cffffff00/mkt delete character|r " .. "|cffbbbbbb- delete current character|r")
 	print("|cffffff00/mkt delete target|r " .. "|cffbbbbbb- delete current target NPC|r")

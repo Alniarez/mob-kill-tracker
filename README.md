@@ -2,6 +2,7 @@ MobKillTracker is a World of Warcraft addon that tracks how many times you have 
 
 Available Commands:
 
+* `/mkt list` - show the kill list window
 * `/mkt delete all` - delete all characters data 
 * `/mkt delete character` - delete current characters data
 * `/mkt delete target` - delete current target NPC data
