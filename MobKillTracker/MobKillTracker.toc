@@ -21,4 +21,6 @@
 
 
 MobKillTracker.lua
+Libs/AlnUI.lua
+MobKillTracker_UI.lua
 MobKillTracker_Options.lua

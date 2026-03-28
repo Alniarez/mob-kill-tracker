@@ -32,6 +32,30 @@ local function InitializeSettings()
 		MobKillTrackerDB.options.showSessionInTooltip = Settings.GetValue("MKT_SHOW_SESSION_TOOLTIP")
 	end)
 
+	-- Window options ------------------------------
+	local goldenThemeSetting = Settings.RegisterAddOnSetting(
+		category,
+		"MKT_GOLDEN_THEME",
+		"goldenTheme",
+		MobKillTrackerDB.options,
+		Settings.VarType.Boolean,
+		"Golden theme",
+		Settings.Default.False
+	)
+
+	Settings.CreateCheckbox(
+		category,
+		goldenThemeSetting,
+		"Use a gold border and header on the kill list window."
+	)
+
+	Settings.SetOnValueChangedCallback("MKT_GOLDEN_THEME", function()
+		MobKillTrackerDB.options.goldenTheme = Settings.GetValue("MKT_GOLDEN_THEME")
+		if MobKillTracker.ApplyWindowTheme then
+			MobKillTracker.ApplyWindowTheme()
+		end
+	end)
+
 	-- Action buttons ------------------------------
 	local wipeAllInitializer = CreateSettingsButtonInitializer(
 		"Erase all data",

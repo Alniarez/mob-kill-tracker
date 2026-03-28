@@ -2,7 +2,7 @@ local ADDON_NAME = ...
 local MKT = CreateFrame("Frame")
 
 -- Configuration ------------------------------
-local DEBUG = false
+local DEBUG = true
 
 -- Runtime-only caches ------------------------------
 local SessionKills = {}
@@ -104,6 +104,7 @@ local function InitDB()
 
 	CHARACTER_KEY = UnitName("player") .. "-" .. GetNormalizedRealmName()
 	MobKillTrackerDB.characters[CHARACTER_KEY] = MobKillTrackerDB.characters[CHARACTER_KEY] or { kills = {} }
+	MobKillTracker.characterKey = CHARACTER_KEY
 end
 
 -- Kill tracking ------------------------------
@@ -288,6 +289,7 @@ SlashCmdList["MOBKILLTRACKER"] = function(msg)
 	-- Help
 	print("|cff33ff99MobKillTracker commands:|r")
 
+	print("|cffffff00/mkt list|r " .. "|cffbbbbbb- toggle the kill list window|r")
 	print("|cffffff00/mkt delete all|r " .. "|cffbbbbbb- delete all characters|r")
 	print("|cffffff00/mkt delete character|r " .. "|cffbbbbbb- delete current character|r")
 	print("|cffffff00/mkt delete target|r " .. "|cffbbbbbb- delete current target NPC|r")
