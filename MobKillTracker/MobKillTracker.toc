@@ -1,4 +1,4 @@
-## Interface: 120001
+## Interface: 120001, 120005
 ## Title: Mob Kill Count
 ## Notes: Tracks how many times you have killed specific mobs.
 ## Version: 1.2
