@@ -92,7 +92,9 @@ local function InitDB()
 	if MobKillTrackerDB.options == nil then
 		MobKillTrackerDB.options = {}
 	end
+end
 
+local function InitCharacter()
 	CHARACTER_KEY = UnitName("player") .. "-" .. GetNormalizedRealmName()
 	MobKillTrackerDB.characters[CHARACTER_KEY] = MobKillTrackerDB.characters[CHARACTER_KEY] or { kills = {} }
 	MobKillTracker.characterKey = CHARACTER_KEY
@@ -297,6 +299,7 @@ local function OnEvent(_, event, ...)
 			DebugPrint("Loaded.")
 		end
 	elseif event == "PLAYER_LOGIN" then
+		InitCharacter()
 		MKT:RegisterEvent("PARTY_KILL")
 	elseif event == "PARTY_KILL" then
 		local attackerGUID, targetGUID = ...
