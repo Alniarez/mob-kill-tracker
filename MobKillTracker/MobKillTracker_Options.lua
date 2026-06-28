@@ -1,10 +1,6 @@
 local ADDON_NAME = ...
 local addon = {}
 
--- Ensure SavedVariables exist (options UI may load early)
-MobKillTrackerDB = MobKillTrackerDB or {}
-MobKillTrackerDB.options = MobKillTrackerDB.options or {}
-
 -- Settings category  ------------------------------
 local category, layout = Settings.RegisterVerticalLayoutCategory("MobKillTracker")
 addon.settingsCategory = category
@@ -111,4 +107,11 @@ local function InitializeSettings()
 	Settings.RegisterAddOnCategory(category)
 end
 
-InitializeSettings()
+local optionsFrame = CreateFrame("Frame")
+optionsFrame:RegisterEvent("ADDON_LOADED")
+optionsFrame:SetScript("OnEvent", function(_, event, addonName)
+	if addonName == ADDON_NAME then
+		InitializeSettings()
+		optionsFrame:UnregisterEvent("ADDON_LOADED")
+	end
+end)

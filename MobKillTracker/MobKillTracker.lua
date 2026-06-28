@@ -93,15 +93,6 @@ local function InitDB()
 		MobKillTrackerDB.options = {}
 	end
 
-	if Settings.SetValue and MobKillTrackerDB.options.showSessionInTooltip ~= nil then
-		Settings.SetValue("MKT_SHOW_SESSION_TOOLTIP", MobKillTrackerDB.options.showSessionInTooltip)
-	end
-
-
-    if MobKillTrackerDB.options.showCreatureID ~= nil then
-        Settings.SetValue("MKT_SHOW_CREATURE_ID", MobKillTrackerDB.options.showCreatureID)
-    end
-
 	CHARACTER_KEY = UnitName("player") .. "-" .. GetNormalizedRealmName()
 	MobKillTrackerDB.characters[CHARACTER_KEY] = MobKillTrackerDB.characters[CHARACTER_KEY] or { kills = {} }
 	MobKillTracker.characterKey = CHARACTER_KEY
@@ -298,15 +289,21 @@ end
 
 -- Events ------------------------------
 local function OnEvent(_, event, ...)
-	if event == "PLAYER_LOGIN" then
-		InitDB()
+	if event == "ADDON_LOADED" then
+		local addonName = ...
+		if addonName == ADDON_NAME then
+			InitDB()
+			MKT:UnregisterEvent("ADDON_LOADED")
+			DebugPrint("Loaded.")
+		end
+	elseif event == "PLAYER_LOGIN" then
 		MKT:RegisterEvent("PARTY_KILL")
-		DebugPrint("Loaded.")
 	elseif event == "PARTY_KILL" then
 		local attackerGUID, targetGUID = ...
 		OnPartyKill(attackerGUID, targetGUID)
 	end
 end
 
+MKT:RegisterEvent("ADDON_LOADED")
 MKT:RegisterEvent("PLAYER_LOGIN")
 MKT:SetScript("OnEvent", OnEvent)
