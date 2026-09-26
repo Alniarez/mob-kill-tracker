@@ -323,6 +323,19 @@ frame:HookScript("OnShow", function()
 end)
 
 --------------------------------------------------
+-- Toggle the kill list window
+--------------------------------------------------
+
+function MobKillTracker.ToggleList()
+    if frame:IsShown() then
+        frame:Hide()
+    else
+        UpdateList()
+        frame:Show()
+    end
+end
+
+--------------------------------------------------
 -- Slash command: "list" toggles the window;
 -- everything else delegates to the original handler.
 --------------------------------------------------
@@ -330,12 +343,7 @@ end)
 local origSlash = SlashCmdList["MOBKILLTRACKER"]
 SlashCmdList["MOBKILLTRACKER"] = function(msg)
     if msg:lower() == "list" then
-        if frame:IsShown() then
-            frame:Hide()
-        else
-            UpdateList()
-            frame:Show()
-        end
+        MobKillTracker.ToggleList()
     else
         origSlash(msg)
     end

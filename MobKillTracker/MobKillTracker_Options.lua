@@ -105,6 +105,30 @@ local function InitializeSettings()
 	end)
 
 	Settings.RegisterAddOnCategory(category)
+
+	-- AddOn Compartment ------------------------------
+	if AddonCompartmentFrame then
+		AddonCompartmentFrame:RegisterAddon({
+			text                = "Mob Kill Tracker",
+			icon                = "Interface\\Icons\\Inv_misc_noteblank2b",
+			registerForAnyClick = true,
+			func                = function()
+				if GetMouseButtonClicked() == "RightButton" then
+					Settings.OpenToCategory(category:GetID())
+				elseif MobKillTracker and MobKillTracker.ToggleList then
+					MobKillTracker.ToggleList()
+				end
+			end,
+			funcOnEnter = function(button)
+				GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+				GameTooltip:AddLine("Mob Kill Tracker", 1, 0.82, 0)
+				GameTooltip:AddLine("Left-click: toggle kill list", 1, 1, 1)
+				GameTooltip:AddLine("Right-click: open settings", 1, 1, 1)
+				GameTooltip:Show()
+			end,
+			funcOnLeave = function() GameTooltip:Hide() end,
+		})
+	end
 end
 
 local optionsFrame = CreateFrame("Frame")
