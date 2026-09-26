@@ -1,13 +1,12 @@
 -- MobKillTracker/MobKillTracker_UI.lua
 
-local rows         = {}
 local UpdateList
 local totalMobsText
 local totalKillsText
 local selectedCharKey  -- nil = current logged-in character
-local charButton       -- forward ref (assigned after frame exists)
-local pickerButtons    = {}
-local sortMode         = "kills"  -- "kills" or "name"
+local charDropdown     -- nil on clients without the native dropdown
+local sortKey          -- "name", "mine", "total", or nil for the default order
+local sortAscending    = false
 
 --------------------------------------------------
 -- Main frame
@@ -19,40 +18,69 @@ local frame = AlnUI:CreateDialog({
     titleWidth = 300,
     width      = 460,
     height     = 500,
+    -- wide enough for the totals and the character dropdown
+    resizable  = true,
+    minWidth   = 360,
+    minHeight  = 250,
+    onResize   = function(w, h)
+        MobKillTrackerDB.listSize = { width = w, height = h }
+    end,
 })
 
 --------------------------------------------------
 -- Column headers
 --------------------------------------------------
 
-AlnUI:CreateColumnRow(frame, { font = "GameFontNormal", x = 24, y = -44 }, {
-    { text = "Mob",       width = 220, justify = "LEFT" },
-    { text = "Character", width = 90,  justify = "RIGHT" },
-    { text = "Total",     width = 90,  justify = "RIGHT", gap = 6 },
+-- Click a column to sort: ascending, descending, then back to the default
+-- order (most total kills first). Mob fills the width left over, so the
+-- columns follow the window size.
+-- right = 40: the list's 36 inset for the scroll bar + the rows' 4
+AlnUI:CreateSortHeader(frame, {
+    x = 24, y = -44, right = 40,
+    onSort = function(key, ascending)
+        sortKey, sortAscending = key, ascending == true
+        UpdateList()
+    end,
+}, {
+    { text = "Mob",       key = "name",  fill  = true, justify = "LEFT" },
+    { text = "Character", key = "mine",  width = 86,   justify = "RIGHT" },
+    { text = "Total",     key = "total", width = 86,   justify = "RIGHT", gap = 6 },
 })
 
---------------------------------------------------
--- Scroll frame
---------------------------------------------------
-
-local scroll, content = AlnUI:CreateScrollFrame(frame, {
-    x1 = 18,  y1 = -62,
-    x2 = -36, y2 = 50,
-    contentWidth  = 360,
-    contentHeight = 400,
-})
+AlnUI:CreateSeparator(frame, { y = -60, x1 = 18, x2 = -18 })
 
 --------------------------------------------------
--- Row cleanup
+-- Kill list
 --------------------------------------------------
 
-local function ClearRows()
-    for _, fs in ipairs(rows) do
-        fs:Hide()
-        fs:SetParent(nil)
-    end
-    wipe(rows)
+-- Shows the full mob name when the Mob column is cut off
+local function RowTooltip(row)
+    local name = row.cols[1]
+    if name:IsTruncated() then return name:GetText() end
 end
+
+local list = AlnUI:CreateScrollList(frame, {
+    x1 = 18,  y1 = -64,
+    x2 = -36, y2 = 56,
+    rowHeight = 22,
+    x         = 6,
+    right     = 4,
+    columns   = {
+        { fill  = true, justify = "LEFT",  wordWrap = false },
+        { width = 86,   justify = "RIGHT" },
+        { width = 86,   justify = "RIGHT", gap = 6 },
+    },
+    -- rows are recycled, so the tooltip reads whatever the row shows now
+    onRowInit = function(row)
+        if not row.alnTooltip then AlnUI:AddTooltip(row, RowTooltip) end
+    end,
+})
+
+-- anchored to the bottom so it stays just under the list while resizing
+local bottomLine = AlnUI:CreateSeparator(frame, { x1 = 18, x2 = -18 })
+bottomLine:ClearAllPoints()
+bottomLine:SetPoint("BOTTOMLEFT", 18, 52)
+bottomLine:SetPoint("BOTTOMRIGHT", -18, 52)
 
 --------------------------------------------------
 -- Kill count color codes (matching main tracker tiers)
@@ -72,33 +100,22 @@ end
 -- Theme
 --------------------------------------------------
 
-local THEME_TEXTURES = {
-    gold     = { edge = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border", header = "Interface\\DialogFrame\\UI-DialogBox-Gold-Header" },
-    standard = { edge = "Interface\\DialogFrame\\UI-DialogBox-Border",      header = "Interface\\DialogFrame\\UI-DialogBox-Header" },
-}
-
 local function ApplyTheme()
     local isGold = MobKillTrackerDB and MobKillTrackerDB.options and MobKillTrackerDB.options.goldenTheme
-    local t = isGold and THEME_TEXTURES.gold or THEME_TEXTURES.standard
-    frame:SetBackdrop({
-        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = t.edge,
-        edgeSize = 32,
-        insets   = { left = 8, right = 8, top = 8, bottom = 8 },
-    })
-    if frame.titleBanner then
-        frame.titleBanner:SetTexture(t.header)
-    end
+    frame:SetTheme(isGold and "gold" or "standard")
 end
 
 MobKillTracker.ApplyWindowTheme = ApplyTheme
 
 --------------------------------------------------
--- Strip realm suffix from a character key
+-- Name to show for a character entry
 --------------------------------------------------
 
-local function ShortName(key)
-    return key:match("^([^%-]+)") or key
+-- Entries keyed by GUID store their name (with surname where the client
+-- has them). Characters not logged in since the switch to GUID keys still
+-- use an old "Name-Realm" key, so strip the realm from those.
+local function CharacterName(key, data)
+    return data.name or key:match("^([^%-]+)") or key
 end
 
 --------------------------------------------------
@@ -128,91 +145,41 @@ local function GetSortedMobs()
         end
     end
 
-    if sortMode == "name" then
-        table.sort(result, function(a, b) return a.name:lower() < b.name:lower() end)
-    elseif sortMode == "killschar" then
-        table.sort(result, function(a, b) return a.mine > b.mine end)
-    else
-        table.sort(result, function(a, b) return a.total > b.total end)
-    end
+    table.sort(result, function(a, b)
+        -- default order: most total kills first
+        if sortKey == nil then
+            if a.total ~= b.total then return a.total > b.total end
+            return a.name:lower() < b.name:lower()
+        end
+        local x, y = a[sortKey], b[sortKey]
+        if sortKey == "name" then x, y = x:lower(), y:lower() end
+        if x == y then return a.npcID < b.npcID end
+        if sortAscending then return x < y end
+        return x > y
+    end)
     return result
 end
 
 --------------------------------------------------
--- Character picker popup
+-- Characters with at least one kill recorded
 --------------------------------------------------
 
-local pickerFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-pickerFrame:SetBackdrop({
-    bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    edgeSize = 16,
-    insets   = { left = 4, right = 4, top = 4, bottom = 4 },
-})
-pickerFrame:SetFrameStrata("DIALOG")
-pickerFrame:SetFrameLevel(frame:GetFrameLevel() + 20)
-pickerFrame:Hide()
-
-local function HidePicker()
-    pickerFrame:Hide()
-end
-
-local function ShowPicker()
-    -- Remove old buttons
-    for _, btn in ipairs(pickerButtons) do
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(pickerButtons)
-
-    -- Collect characters that have at least one kill recorded
-    local chars = {}
+local function GetCharacterOptions()
+    local options = {}
     if MobKillTrackerDB and MobKillTrackerDB.characters then
         for key, data in pairs(MobKillTrackerDB.characters) do
             if data.kills then
                 for _, v in pairs(data.kills) do
                     if v > 0 then
-                        table.insert(chars, key)
+                        table.insert(options, { value = key, label = CharacterName(key, data) })
                         break
                     end
                 end
             end
         end
     end
-    table.sort(chars)
-
-    if #chars == 0 then return end
-
-    local btnHeight = 22
-    local btnWidth  = 160
-    local padding   = 6
-    local activeKey = selectedCharKey or MobKillTracker.characterKey
-
-    for i, key in ipairs(chars) do
-        local btn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
-        btn:SetSize(btnWidth, btnHeight)
-        btn:SetPoint("TOPLEFT", padding, -padding - (i - 1) * (btnHeight + 2))
-        btn:SetText(ShortName(key))
-
-        -- Highlight the currently active character
-        if key == activeKey then
-            btn:GetFontString():SetTextColor(1, 0.82, 0)
-        end
-
-        btn:SetScript("OnClick", function()
-            selectedCharKey = key
-            charButton:SetText(ShortName(key))
-            HidePicker()
-            UpdateList()
-        end)
-
-        table.insert(pickerButtons, btn)
-    end
-
-    local totalH = padding * 2 + #chars * (btnHeight + 2)
-    pickerFrame:SetSize(btnWidth + padding * 2, totalH)
-    pickerFrame:SetPoint("BOTTOMLEFT", charButton, "TOPLEFT", 0, 4)
-    pickerFrame:Show()
+    table.sort(options, function(a, b) return a.label < b.label end)
+    return options
 end
 
 --------------------------------------------------
@@ -220,39 +187,20 @@ end
 --------------------------------------------------
 
 function UpdateList()
-    ClearRows()
-
     local data       = GetSortedMobs()
-    local rowHeight  = 22
-    local startY     = -8
+    local rows       = {}
     local grandTotal = 0
 
     for i, entry in ipairs(data) do
-        local y        = startY - (i - 1) * rowHeight
-        local mineStr  = KillColorCode(entry.mine)  .. entry.mine  .. "|r"
-        local totalStr = KillColorCode(entry.total) .. entry.total .. "|r"
-
-        local cols = AlnUI:CreateColumnRow(content, { y = y }, {
-            { text = entry.name, width = 220, justify = "LEFT",  wordWrap = false },
-            { text = mineStr,    width = 90,  justify = "RIGHT" },
-            { text = totalStr,   width = 90,  justify = "RIGHT", gap = 6 },
-        })
-
-        cols[1]:SetScript("OnEnter", function(self)
-            if self:IsTruncated() then
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetText(entry.name, 1, 1, 1, true)
-                GameTooltip:Show()
-            end
-        end)
-        cols[1]:SetScript("OnLeave", GameTooltip_Hide)
-
-        for _, fs in ipairs(cols) do table.insert(rows, fs) end
-
+        rows[i] = {
+            entry.name,
+            KillColorCode(entry.mine)  .. entry.mine  .. "|r",
+            KillColorCode(entry.total) .. entry.total .. "|r",
+        }
         grandTotal = grandTotal + entry.total
     end
 
-    content:SetHeight(math.max(400, (#data + 1) * rowHeight))
+    list:SetData(rows)
 
     totalMobsText:SetText("Mobs tracked: " .. #data)
     totalKillsText:SetText("Total kills: "  .. grandTotal)
@@ -262,64 +210,45 @@ end
 -- Totals
 --------------------------------------------------
 
-totalMobsText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+totalMobsText = AlnUI:CreateLabel(frame, { text = "Mobs tracked: 0", color = { 1, 0.82, 0 } })
 totalMobsText:SetPoint("BOTTOMLEFT", 20, 30)
-totalMobsText:SetJustifyH("LEFT")
-totalMobsText:SetText("Mobs tracked: 0")
-totalMobsText:SetTextColor(1, 0.82, 0)
 
-totalKillsText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+totalKillsText = AlnUI:CreateLabel(frame, { text = "Total kills: 0", color = { 1, 0.82, 0 } })
 totalKillsText:SetPoint("TOPLEFT", totalMobsText, "BOTTOMLEFT", 0, -2)
-totalKillsText:SetJustifyH("LEFT")
-totalKillsText:SetText("Total kills: 0")
-totalKillsText:SetTextColor(1, 0.82, 0)
 
 --------------------------------------------------
--- Character selector button (bottom-right)
+-- Character selector (bottom-right)
 --------------------------------------------------
 
-charButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-charButton:SetSize(140, 22)
-charButton:SetPoint("BOTTOMRIGHT", -16, 16)
-charButton:SetText("Character")
+if AlnUI:HasDropdown() then
+    charDropdown = AlnUI:CreateDropdown(frame, {
+        width       = 140,
+        placeholder = "Character",
+        tooltip     = "Character",
+        tooltipText = "Whose kills to show in the Character column.",
+        onChange    = function(key)
+            selectedCharKey = key
+            UpdateList()
+        end,
+    })
+    charDropdown:SetPoint("BOTTOMRIGHT", -26, 16)
+end
 
---------------------------------------------------
--- Sort toggle button
---------------------------------------------------
-
-local sortButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-sortButton:SetSize(110, 22)
-sortButton:SetPoint("BOTTOMRIGHT", charButton, "BOTTOMLEFT", -6, 0)
-sortButton:SetText("Sort: Kills")
-
-sortButton:SetScript("OnClick", function()
-    if sortMode == "kills" then
-        sortMode = "name"
-        sortButton:SetText("Sort: Name")
-    elseif sortMode == "name" then
-        sortMode = "killschar"
-        sortButton:SetText("Sort: Kills (C)")
-    else
-        sortMode = "kills"
-        sortButton:SetText("Sort: Kills")
-    end
-    UpdateList()
-end)
-
-charButton:SetScript("OnClick", function()
-    if pickerFrame:IsShown() then
-        HidePicker()
-    else
-        ShowPicker()
-    end
-end)
-
--- Sync label, theme, and close picker whenever the window opens
+-- Sync size, theme and the character list whenever the window opens
+local sizeRestored = false
 frame:HookScript("OnShow", function()
+    -- SavedVariables aren't loaded when this file runs, so restore here
+    local size = MobKillTrackerDB and MobKillTrackerDB.listSize
+    if size and not sizeRestored then
+        frame:SetClampedSize(size.width, size.height)
+    end
+    sizeRestored = true
+
     ApplyTheme()
-    local key = selectedCharKey or MobKillTracker.characterKey
-    charButton:SetText(key and ShortName(key) or "Character")
-    HidePicker()
+    if charDropdown then
+        charDropdown:SetOptions(GetCharacterOptions())
+        charDropdown:SetValue(selectedCharKey or MobKillTracker.characterKey)
+    end
 end)
 
 --------------------------------------------------

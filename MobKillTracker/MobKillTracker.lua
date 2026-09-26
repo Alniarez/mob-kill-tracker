@@ -2,7 +2,7 @@ local ADDON_NAME = ...
 local MKT = CreateFrame("Frame")
 
 -- Configuration ------------------------------
-local DEBUG = false
+local DEBUG = true
 
 -- Runtime-only caches ------------------------------
 local SessionKills = {}
@@ -94,9 +94,25 @@ local function InitDB()
 	end
 end
 
+-- Characters are keyed by GUID, which survives renames and surname
+-- changes. Each entry also keeps a display name, refreshed every login.
 local function InitCharacter()
-	CHARACTER_KEY = UnitName("player") .. "-" .. GetNormalizedRealmName()
-	MobKillTrackerDB.characters[CHARACTER_KEY] = MobKillTrackerDB.characters[CHARACTER_KEY] or { kills = {} }
+	local guid  = UnitGUID("player")
+	local chars = MobKillTrackerDB.characters
+
+	-- One-time move from the old "Name-Realm" key
+	local oldKey = UnitName("player") .. "-" .. GetNormalizedRealmName()
+	if not chars[guid] and chars[oldKey] then
+		chars[guid] = chars[oldKey]
+		chars[oldKey] = nil
+		DebugPrint("Moved character data from " .. oldKey .. " to " .. guid .. ".")
+	end
+
+	chars[guid] = chars[guid] or { kills = {} }
+	-- includes the surname on clients that have them
+	chars[guid].name = GetUnitName("player", true) or UnitName("player")
+
+	CHARACTER_KEY = guid
 	MobKillTracker.characterKey = CHARACTER_KEY
 end
 
@@ -151,7 +167,7 @@ function MobKillTracker.DeleteAllData()
 	DebugPrint("All data reset.")
 end
 
-function MobKillTracker.DeletedCharacterData()
+function MobKillTracker.DeleteCharacterData()
 	if MobKillTrackerDB.characters[CHARACTER_KEY] then
 		MobKillTrackerDB.characters[CHARACTER_KEY].kills = {}
 	end
