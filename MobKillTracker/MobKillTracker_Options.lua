@@ -1,6 +1,16 @@
 local ADDON_NAME = ...
 local addon = {}
 
+-- What each window theme looks like, for the theme dropdown's tooltips
+local THEME_DESCRIPTIONS = {
+	basic    = "Blizzard's classic metal frame with a title bar.",
+	gold     = "A gold dialog border with a title banner.",
+	modern   = "The Game Menu's border and header.",
+	panel    = "Blizzard's modern frame, as on the Character window.",
+	standard = "A grey dialog border with a title banner.",
+	tooltip  = "A tooltip's thin border.",
+}
+
 -- Settings category  ------------------------------
 local category, layout = Settings.RegisterVerticalLayoutCategory("MobKillTracker")
 addon.settingsCategory = category
@@ -29,24 +39,40 @@ local function InitializeSettings()
 	end)
 
 	-- Window options ------------------------------
-	local goldenThemeSetting = Settings.RegisterAddOnSetting(
+	-- The theme used to be a "Golden theme" checkbox; carry it over once
+	local options = MobKillTrackerDB.options
+	if options.theme == nil then
+		options.theme = options.goldenTheme and "gold" or "standard"
+	end
+
+	local themeSetting = Settings.RegisterAddOnSetting(
 		category,
-		"MKT_GOLDEN_THEME",
-		"goldenTheme",
-		MobKillTrackerDB.options,
-		Settings.VarType.Boolean,
-		"Golden theme",
-		Settings.Default.False
+		"MKT_THEME",
+		"theme",
+		options,
+		Settings.VarType.String,
+		"Window theme",
+		"standard"
 	)
 
-	Settings.CreateCheckbox(
+	-- every theme AlnUI can draw on this client
+	local function GetThemeOptions()
+		local container = Settings.CreateControlTextContainer()
+		for _, name in ipairs(AlnUI:GetThemes()) do
+			container:Add(name, name:sub(1, 1):upper() .. name:sub(2), THEME_DESCRIPTIONS[name])
+		end
+		return container:GetData()
+	end
+
+	Settings.CreateDropdown(
 		category,
-		goldenThemeSetting,
-		"Use a gold border and header on the kill list window."
+		themeSetting,
+		GetThemeOptions,
+		"The border and title style of the kill list window."
 	)
 
-	Settings.SetOnValueChangedCallback("MKT_GOLDEN_THEME", function()
-		MobKillTrackerDB.options.goldenTheme = Settings.GetValue("MKT_GOLDEN_THEME")
+	Settings.SetOnValueChangedCallback("MKT_THEME", function()
+		MobKillTrackerDB.options.theme = Settings.GetValue("MKT_THEME")
 		if MobKillTracker.ApplyWindowTheme then
 			MobKillTracker.ApplyWindowTheme()
 		end

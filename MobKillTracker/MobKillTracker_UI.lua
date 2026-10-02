@@ -101,8 +101,8 @@ end
 --------------------------------------------------
 
 local function ApplyTheme()
-    local isGold = MobKillTrackerDB and MobKillTrackerDB.options and MobKillTrackerDB.options.goldenTheme
-    frame:SetTheme(isGold and "gold" or "standard")
+    local options = MobKillTrackerDB and MobKillTrackerDB.options
+    frame:SetTheme(options and options.theme or "standard")
 end
 
 MobKillTracker.ApplyWindowTheme = ApplyTheme
