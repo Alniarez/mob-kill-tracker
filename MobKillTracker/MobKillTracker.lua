@@ -2,7 +2,7 @@ local ADDON_NAME = ...
 local MKT = CreateFrame("Frame")
 
 -- Configuration ------------------------------
-local DEBUG = true
+local DEBUG = false
 
 -- Runtime-only caches ------------------------------
 local SessionKills = {}
