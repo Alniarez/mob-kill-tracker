@@ -2,7 +2,7 @@ local ADDON_NAME = ...
 local MKT = CreateFrame("Frame")
 
 -- Configuration ------------------------------
-local DEBUG = false
+local DEBUG = AlniDev and AlniDev.debug[ADDON_NAME] or false
 
 -- Runtime-only caches ------------------------------
 local SessionKills = {}
