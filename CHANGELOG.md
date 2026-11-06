@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.7
+
+- TOC update
+- Tainted menu fix
+
 ## 1.3.6
 
 - Counts pet kills

@@ -15,6 +15,25 @@ local THEME_DESCRIPTIONS = {
 local category, layout = Settings.RegisterVerticalLayoutCategory("MobKillTracker")
 addon.settingsCategory = category
 
+-- A settings button that shows up in the Settings search. Search words added
+-- by addon code (CreateSettingsButtonInitializer with addSearchTags) taint the
+-- search, and Blizzard then blocks the Discord row's IsUserOAuthed(). Backed
+-- by an unused setting, Blizzard adds the label as a search word itself.
+local unusedSettings = {}
+local function AddSearchableButton(category, variable, label, buttonText, onClick, tooltip)
+	local layout = SettingsPanel:GetLayout(category)
+	if not Settings.CreateSettingInitializer then
+		layout:AddInitializer(CreateSettingsButtonInitializer(label, buttonText, onClick, tooltip, false))
+		return
+	end
+	local setting = Settings.RegisterAddOnSetting(category, variable, variable, unusedSettings,
+		Settings.VarType.Boolean, label, false)
+	layout:AddInitializer(Settings.CreateSettingInitializer("SettingButtonControlTemplate", {
+		setting = setting, name = label, tooltip = tooltip,
+		buttonText = buttonText, buttonClick = onClick,
+	}))
+end
+
 local function InitializeSettings()
 
 	-- Tooltip options ------------------------------
@@ -79,33 +98,23 @@ local function InitializeSettings()
 	end)
 
 	-- Action buttons ------------------------------
-	local wipeAllInitializer = CreateSettingsButtonInitializer(
-		"Erase all data",
-		"Erase all data",
+	AddSearchableButton(category, "MKT_ERASE_ALL", "Erase all data", "Erase all data",
 		function()
 			if MobKillTracker and MobKillTracker.DeleteAllData then
 				MobKillTracker.DeleteAllData()
 			end
 		end,
-		"Deletes all stored kill data for every character.",
-		true
-	)
+		"Deletes all stored kill data for every character.")
 
-	local wipeCharInitializer = CreateSettingsButtonInitializer(
-		"Erase character data",
-		"Erase character data",
+	AddSearchableButton(category, "MKT_ERASE_CHARACTER", "Erase character data", "Erase character data",
 		function()
 			if MobKillTracker and MobKillTracker.DeleteCharacterData then
 				MobKillTracker.DeleteCharacterData()
 			end
 		end,
-		"Deletes kill data for the current character only.",
-		true
-	)
+		"Deletes kill data for the current character only.")
 
 	local addonLayout = SettingsPanel:GetLayout(category)
-	addonLayout:AddInitializer(wipeAllInitializer)
-	addonLayout:AddInitializer(wipeCharInitializer)
 
 	-- Debug section ------------------------------
 	addonLayout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Debug"))
