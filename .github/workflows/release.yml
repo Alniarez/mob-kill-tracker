@@ -1,0 +1,18 @@
+# Packages the addon and uploads it to CurseForge when a version tag (v1.2.3) is pushed.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: BigWigsMods/packager@v2
