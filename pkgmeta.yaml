@@ -1,0 +1,18 @@
+package-as: MobKillTracker
+
+# the addon lives in a subfolder of the repo
+move-folders:
+  MobKillTracker/MobKillTracker: MobKillTracker
+
+# repo files that aren't part of the addon
+ignore:
+  - README.md
+  - CHANGELOG.md
+  - WHATS_NEW.md
+  - pkgmeta.yaml
+  - publish.fish
+  - license
+
+manual-changelog:
+  filename: WHATS_NEW.md
+  markup-type: markdown
