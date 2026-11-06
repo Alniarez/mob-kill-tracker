@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.6
+
+- Counts pet kills
+- Counts mobs you tagged that someone else finished, once you loot them
+
 ## 1.3.5
 
 - Toc updates

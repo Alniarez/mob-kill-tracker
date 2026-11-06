@@ -117,12 +117,87 @@ local function InitCharacter()
 end
 
 -- Kill tracking ------------------------------
-local function OnPartyKill(_attackerGUID, targetGUID)
-	local npcID = targetGUID and GetNPCIDFromGUID(targetGUID)
+-- PARTY_KILL counts the player's and the group's killing blows. UNIT_DIED
+-- fills in the two kills it never fires for:
+--   * the pet's killing blow
+--   * a mob the player fought that someone outside the group finished. Only
+--     its tagger can loot the corpse, so it counts once looted.
+local ENGAGED_KEEP_SEC = 60 -- a mob is ours this long after its last threat update
+local PET_LEFT_KEEP_SEC = 60 -- the pet's kill can land after it switched targets
+local CLAIM_KEEP_SEC = 300 -- how long a corpse waits for its loot
+local PRUNE_SEC = 60
 
+local counted = {} -- GUID -> true, so one death never counts twice
+local engaged = {} -- GUID -> { at, name } while the player is on its threat list
+local claimable = {} -- GUID -> when it died, waiting for its loot
+local petTarget -- GUID the pet is on
+local petLeft = {} -- GUID -> when the pet left it
+local lastPrune = 0
+
+-- Since 12.0 instances hide unit identity: GUIDs there are secret, and
+-- comparing one is an error pcall can't catch. These handlers stay out.
+local function InInstance()
+	local _, kind = IsInInstance()
+	return kind ~= nil and kind ~= "none"
+end
+
+local function ReadGUID(unit)
+	local guid = UnitGUID(unit)
+	if issecretvalue(guid) then
+		return nil
+	end
+	return guid
+end
+
+-- Whether someone outside the group tagged the mob, read from any unit token
+-- the client still has for it. False when unknown.
+local function TaggedBySomeoneElse(guid)
+	local token = UnitTokenFromGUID and UnitTokenFromGUID(guid)
+	if not token or issecretvalue(token) then
+		return false
+	end
+	local ok, denied = pcall(UnitIsTapDenied, token)
+	return ok and not issecretvalue(denied) and denied == true
+end
+
+local function Prune()
+	local now = GetTime()
+	if now - lastPrune < PRUNE_SEC then
+		return
+	end
+	lastPrune = now
+	for guid, entry in pairs(engaged) do
+		if now - entry.at > ENGAGED_KEEP_SEC then
+			engaged[guid] = nil
+		end
+	end
+	for guid, at in pairs(petLeft) do
+		if now - at > PET_LEFT_KEEP_SEC then
+			petLeft[guid] = nil
+		end
+	end
+	for guid, at in pairs(claimable) do
+		if now - at > CLAIM_KEEP_SEC then
+			claimable[guid] = nil
+		end
+	end
+end
+
+local function RecordKill(guid, source)
+	if not guid or issecretvalue(guid) or counted[guid] then
+		return
+	end
+
+	local npcID = GetNPCIDFromGUID(guid)
 	if not npcID then
 		return
 	end
+
+	counted[guid] = true
+	local fought = engaged[guid]
+	engaged[guid] = nil
+	claimable[guid] = nil
+	local targetGUID = guid
 
 	SessionKills[npcID] = (SessionKills[npcID] or 0) + 1
 
@@ -133,23 +208,103 @@ local function OnPartyKill(_attackerGUID, targetGUID)
 	charKills[npcID] = (charKills[npcID] or 0) + 1
 
 	-- Best-effort name catalog ------------------------------
-    local name = GetNPCNameFromGUID(targetGUID)
+	-- the corpse may be gone from every unit token by now, so fall back to the
+	-- name seen while fighting it
+	local name = GetNPCNameFromGUID(targetGUID) or (fought and fought.name)
 
-    local names = MobKillTrackerDB.names
-    local existing = names[npcID]
+	local names = MobKillTrackerDB.names
+	local existing = names[npcID]
 
-    if name and name ~= "" then
-    	-- Prefer a real name over Unknown, but do not overwrite existing names
-    	if not existing or existing == "Unknown" then
-    		names[npcID] = name
-    	end
-    end
+	if name and name ~= "" then
+		-- Prefer a real name over Unknown, but do not overwrite existing names
+		if not existing or existing == "Unknown" then
+			names[npcID] = name
+		end
+	end
 
 	if DEBUG then
-        local displayName = name or catalogName or "Unknown"
+		local displayName = name or names[npcID] or "Unknown"
 		DebugPrint(
-			("NPC %s (%d) kills (session %d): %d / %d"):format(displayName, npcID, SessionKills[npcID], charKills[npcID], total[npcID])
+			("NPC %s (%d) kills (session %d): %d / %d [%s]"):format(
+				displayName, npcID, SessionKills[npcID], charKills[npcID], total[npcID], source
+			)
 		)
+	end
+end
+
+-- A threat list changed (target, focus or a nameplate): note the mobs the
+-- player is on, with their name while it can still be read.
+local function OnThreatUpdate(unit)
+	if not unit or issecretvalue(unit) then
+		return
+	end
+	local guid = ReadGUID(unit)
+	if not guid or not GetNPCIDFromGUID(guid) then
+		return
+	end
+	local ok, status = pcall(UnitThreatSituation, "player", unit)
+	if not ok or issecretvalue(status) or status == nil then
+		return
+	end
+	local name = UnitName(unit)
+	if issecretvalue(name) then
+		name = nil
+	end
+	local entry = engaged[guid]
+	engaged[guid] = { at = GetTime(), name = name or (entry and entry.name) }
+end
+
+-- The pet changed target: remember the mob it left, and the one it's on now.
+local function OnPetTarget()
+	local guid = ReadGUID("pettarget")
+	if petTarget and petTarget ~= guid then
+		petLeft[petTarget] = GetTime()
+	end
+	petTarget = guid
+end
+
+local function PetWasOn(guid)
+	if petTarget == guid or ReadGUID("pettarget") == guid then
+		return true
+	end
+	local left = petLeft[guid]
+	return left ~= nil and GetTime() - left <= PET_LEFT_KEEP_SEC
+end
+
+-- Fires for every death the client sees, whoever caused it. The player's own
+-- blows already counted through PARTY_KILL; this only takes the pet's, and
+-- holds the mobs the player fought until their corpse is looted.
+local function OnUnitDied(guid)
+	if not guid or issecretvalue(guid) or counted[guid] then
+		return
+	end
+	Prune()
+	if PetWasOn(guid) and not TaggedBySomeoneElse(guid) then
+		RecordKill(guid, "pet")
+		return
+	end
+	local entry = engaged[guid]
+	if entry and GetTime() - entry.at <= ENGAGED_KEEP_SEC then
+		claimable[guid] = GetTime()
+	end
+end
+
+-- A loot window: each slot names the corpses it comes from.
+local function OnLoot()
+	if not GetLootSourceInfo then
+		return
+	end
+	for slot = 1, GetNumLootItems() do
+		local sources = { GetLootSourceInfo(slot) }
+		for i = 1, #sources, 2 do
+			local guid = sources[i]
+			if guid and not issecretvalue(guid) then
+				local at = claimable[guid]
+				if at and GetTime() - at <= CLAIM_KEEP_SEC then
+					RecordKill(guid, "looted")
+				end
+			end
+		end
 	end
 end
 
@@ -306,6 +461,20 @@ SlashCmdList["MOBKILLTRACKER"] = function(msg)
 end
 
 -- Events ------------------------------
+-- RegisterEvent raises on an event the client doesn't know; a missing extra
+-- source must not stop PARTY_KILL from counting.
+local function SafeRegister(event, unit)
+	local ok, registered
+	if unit then
+		ok, registered = pcall(MKT.RegisterUnitEvent, MKT, event, unit)
+	else
+		ok, registered = pcall(MKT.RegisterEvent, MKT, event)
+	end
+	if not ok or registered == false then
+		DebugPrint("Could not register " .. event .. ".")
+	end
+end
+
 local function OnEvent(_, event, ...)
 	if event == "ADDON_LOADED" then
 		local addonName = ...
@@ -317,9 +486,25 @@ local function OnEvent(_, event, ...)
 	elseif event == "PLAYER_LOGIN" then
 		InitCharacter()
 		MKT:RegisterEvent("PARTY_KILL")
+		SafeRegister("UNIT_DIED")
+		SafeRegister("UNIT_THREAT_LIST_UPDATE")
+		SafeRegister("UNIT_TARGET", "pet")
+		SafeRegister("LOOT_READY")
+		SafeRegister("LOOT_OPENED")
 	elseif event == "PARTY_KILL" then
-		local attackerGUID, targetGUID = ...
-		OnPartyKill(attackerGUID, targetGUID)
+		local _, targetGUID = ...
+		RecordKill(targetGUID, "killing blow")
+	elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
+		OnLoot()
+	elseif InInstance() then
+		-- the payloads below are secret in instances
+		return
+	elseif event == "UNIT_DIED" then
+		OnUnitDied((...))
+	elseif event == "UNIT_THREAT_LIST_UPDATE" then
+		OnThreatUpdate((...))
+	elseif event == "UNIT_TARGET" then
+		OnPetTarget()
 	end
 end
 
