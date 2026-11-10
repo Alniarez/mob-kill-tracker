@@ -7,6 +7,8 @@
 #   ./publish.fish           asks for the version
 #   ./publish.fish 1.2.10    uses that version
 #
+# If the last run tagged a version but couldn't push it, it offers to push that.
+#
 # The same script is in every addon repo; it reads the addon name from pkgmeta.yaml.
 
 cd (path resolve (status dirname)); or exit 1
@@ -18,9 +20,33 @@ if test -z "$name"; or not test -f $toc
     exit 1
 end
 
-function tag_exists --argument-names tag
+function tag_local --argument-names tag
     git rev-parse -q --verify "refs/tags/$tag" >/dev/null
-    or git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1
+end
+
+function tag_remote --argument-names tag
+    git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1
+end
+
+function tag_exists --argument-names tag
+    tag_local $tag; or tag_remote $tag
+end
+
+function push --argument-names ver
+    set -l branch (git branch --show-current)
+    read -P "Push now (publishes to CurseForge)? [y/N] " answer
+    if not string match -qi y -- "$answer"
+        echo "Not pushed. To publish later, run this script again or:"
+        echo "  git push origin $branch v$ver"
+        return 0
+    end
+    if git push origin $branch v$ver
+        echo "Pushed. The upload runs in the repo's Actions tab, then shows up on CurseForge."
+    else
+        echo "Push failed (see above). Run this script again to retry, or:" >&2
+        echo "  git push origin $branch v$ver" >&2
+        return 1
+    end
 end
 
 function changelog_section --argument-names ver
@@ -33,6 +59,13 @@ end
 set -l current (string match -rg '^## Version:\s*(\S+)' < $toc)
 set -l last_tag (git describe --tags --abbrev=0 2>/dev/null; or echo none)
 echo "$name: TOC version $current, last tag $last_tag, branch "(git branch --show-current)
+
+# a version tagged here that never reached GitHub (the push failed or was skipped)
+if tag_local v$current; and not tag_remote v$current
+    echo "v$current is tagged but not pushed yet."
+    push $current
+    exit $status
+end
 
 # the TOC version if it isn't released yet, else the next patch version
 set -l suggest $current
@@ -110,29 +143,31 @@ else
 end
 echo
 
-echo "Changes that go into the commit:"
-git status --short
+# already committed (e.g. by hand): only the tag is left to make
+set -l changes (git status --porcelain)
+set -l question "Commit as \"$ver\" and tag v$ver?"
+if test (count $changes) -gt 0
+    echo "Changes that go into the commit:"
+    git status --short
+else
+    echo "Nothing to commit: the last commit ("(git log -1 --format=%s)") gets the tag."
+    set question "Tag v$ver?"
+end
 echo
-read -P "Commit as \"$ver\" and tag v$ver? [y/N] " answer
+read -P "$question [y/N] " answer
 if not string match -qi y -- "$answer"
     echo "Nothing committed. The file changes are left in place."
     exit 0
 end
 
-git add -A
-and git commit -m $ver
+if test (count $changes) -gt 0
+    git add -A
+    and git commit -m $ver
+end
 and git tag v$ver
 or begin
     echo "Stopped: a git step failed (see above)." >&2
     exit 1
 end
-set -l branch (git branch --show-current)
-echo "Committed and tagged v$ver."
-read -P "Push now (publishes to CurseForge)? [y/N] " answer
-if string match -qi y -- "$answer"
-    git push origin $branch v$ver; or exit 1
-    echo "Pushed. The upload runs in the repo's Actions tab, then shows up on CurseForge."
-else
-    echo "Not pushed. To publish later:"
-    echo "  git push origin $branch v$ver"
-end
+echo "Tagged v$ver."
+push $ver
