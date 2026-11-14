@@ -11,135 +11,85 @@ local THEME_DESCRIPTIONS = {
 	tooltip  = "A tooltip's thin border.",
 }
 
--- Settings category  ------------------------------
-local category, layout = Settings.RegisterVerticalLayoutCategory("MobKillTracker")
-addon.settingsCategory = category
-
--- A settings button that shows up in the Settings search. Search words added
--- by addon code (CreateSettingsButtonInitializer with addSearchTags) taint the
--- search, and Blizzard then blocks the Discord row's IsUserOAuthed(). Backed
--- by an unused setting, Blizzard adds the label as a search word itself.
-local unusedSettings = {}
-local function AddSearchableButton(category, variable, label, buttonText, onClick, tooltip)
-	local layout = SettingsPanel:GetLayout(category)
-	if not Settings.CreateSettingInitializer then
-		layout:AddInitializer(CreateSettingsButtonInitializer(label, buttonText, onClick, tooltip, false))
-		return
+-- every theme AlnUI can draw on this client
+local function GetThemeOptions()
+	local list = {}
+	for _, name in ipairs(AlnUI:GetThemes()) do
+		table.insert(list, { value = name, label = name:sub(1, 1):upper() .. name:sub(2), tooltip = THEME_DESCRIPTIONS[name] })
 	end
-	local setting = Settings.RegisterAddOnSetting(category, variable, variable, unusedSettings,
-		Settings.VarType.Boolean, label, false)
-	layout:AddInitializer(Settings.CreateSettingInitializer("SettingButtonControlTemplate", {
-		setting = setting, name = label, tooltip = tooltip,
-		buttonText = buttonText, buttonClick = onClick,
-	}))
+	return list
 end
 
 local function InitializeSettings()
-
-	-- Tooltip options ------------------------------
-	local showSessionSetting = Settings.RegisterAddOnSetting(
-		category, -- category
-		"MKT_SHOW_SESSION_TOOLTIP",  -- internal variable ID
-		"showSessionInTooltip",  -- key in options table
-		MobKillTrackerDB.options,  -- backing table (IMPORTANT)
-		Settings.VarType.Boolean,  -- type
-		"Show session kills in tooltip",  -- display name
-		Settings.Default.False -- default
-	)
-
-	Settings.CreateCheckbox(
-		category,
-		showSessionSetting,
-		"Displays the number of kills during the current session."
-	)
-
-	Settings.SetOnValueChangedCallback("MKT_SHOW_SESSION_TOOLTIP", function()
-		MobKillTrackerDB.options.showSessionInTooltip = Settings.GetValue("MKT_SHOW_SESSION_TOOLTIP")
-	end)
-
-	-- Window options ------------------------------
-	-- The theme used to be a "Golden theme" checkbox; carry it over once
 	local options = MobKillTrackerDB.options
+
+	-- The theme used to be a "Golden theme" checkbox; carry it over once
 	if options.theme == nil then
 		options.theme = options.goldenTheme and "gold" or "standard"
 	end
-
-	local themeSetting = Settings.RegisterAddOnSetting(
-		category,
-		"MKT_THEME",
-		"theme",
-		options,
-		Settings.VarType.String,
-		"Window theme",
-		"standard"
-	)
-
-	-- every theme AlnUI can draw on this client
-	local function GetThemeOptions()
-		local container = Settings.CreateControlTextContainer()
-		for _, name in ipairs(AlnUI:GetThemes()) do
-			container:Add(name, name:sub(1, 1):upper() .. name:sub(2), THEME_DESCRIPTIONS[name])
-		end
-		return container:GetData()
+	if options.showSessionInTooltip == nil then
+		options.showSessionInTooltip = false
+	end
+	if options.showCreatureID == nil then
+		options.showCreatureID = false
 	end
 
-	Settings.CreateDropdown(
-		category,
-		themeSetting,
-		GetThemeOptions,
-		"The border and title style of the kill list window."
-	)
+	-- drawn on its own frame (canvas): addon options on Blizzard's settings rows get its Discord settings blocked
+	local page = AlnUI:CreateSettingsPage({ name = "MobKillTracker" })
 
-	Settings.SetOnValueChangedCallback("MKT_THEME", function()
-		MobKillTrackerDB.options.theme = Settings.GetValue("MKT_THEME")
-		if MobKillTracker.ApplyWindowTheme then
-			MobKillTracker.ApplyWindowTheme()
-		end
-	end)
+	page:AddCheckbox({
+		label   = "Show session kills in tooltip",
+		tooltip = "Displays the number of kills during the current session.",
+		get     = function() return options.showSessionInTooltip end,
+		set     = function(value) options.showSessionInTooltip = value end,
+	})
 
-	-- Action buttons ------------------------------
-	AddSearchableButton(category, "MKT_ERASE_ALL", "Erase all data", "Erase all data",
-		function()
+	page:AddDropdown({
+		label   = "Window theme",
+		tooltip = "The border and title style of the kill list window.",
+		options = GetThemeOptions,
+		get     = function() return options.theme end,
+		set     = function(value)
+			options.theme = value
+			if MobKillTracker.ApplyWindowTheme then
+				MobKillTracker.ApplyWindowTheme()
+			end
+		end,
+	})
+
+	page:AddButton({
+		label   = "Erase all data",
+		text    = "Erase all data",
+		tooltip = "Deletes all stored kill data for every character.",
+		onClick = function()
 			if MobKillTracker and MobKillTracker.DeleteAllData then
 				MobKillTracker.DeleteAllData()
 			end
 		end,
-		"Deletes all stored kill data for every character.")
+	})
 
-	AddSearchableButton(category, "MKT_ERASE_CHARACTER", "Erase character data", "Erase character data",
-		function()
+	page:AddButton({
+		label   = "Erase character data",
+		text    = "Erase character data",
+		tooltip = "Deletes kill data for the current character only.",
+		onClick = function()
 			if MobKillTracker and MobKillTracker.DeleteCharacterData then
 				MobKillTracker.DeleteCharacterData()
 			end
 		end,
-		"Deletes kill data for the current character only.")
+	})
 
-	local addonLayout = SettingsPanel:GetLayout(category)
+	page:AddHeader("Debug")
 
-	-- Debug section ------------------------------
-	addonLayout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Debug"))
+	page:AddCheckbox({
+		label   = "Show creature ID",
+		tooltip = "Displays the NPC ID of the creature in the tooltip.",
+		get     = function() return options.showCreatureID end,
+		set     = function(value) options.showCreatureID = value end,
+	})
 
-	local showIDSetting = Settings.RegisterAddOnSetting(
-		category,
-		"MKT_SHOW_CREATURE_ID",
-		"showCreatureID",
-		MobKillTrackerDB.options,
-		Settings.VarType.Boolean,
-		"Show creature ID",
-		Settings.Default.False
-	)
-
-	Settings.CreateCheckbox(
-		category,
-		showIDSetting,
-		"Displays the NPC ID of the creature in the tooltip."
-	)
-
-	Settings.SetOnValueChangedCallback("MKT_SHOW_CREATURE_ID", function()
-		MobKillTrackerDB.options.showCreatureID = Settings.GetValue("MKT_SHOW_CREATURE_ID")
-	end)
-
-	Settings.RegisterAddOnCategory(category)
+	local category = page:Register()
+	addon.settingsCategory = category
 
 	-- AddOn Compartment ------------------------------
 	if AddonCompartmentFrame then

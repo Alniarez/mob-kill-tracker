@@ -378,7 +378,7 @@ local function AddKillLine(tooltip)
 	local r, g, b = GetKillColor(total)
 	local rightText = ("%d / %d"):format(charKills, total)
 
-	if Settings.GetValue("MKT_SHOW_SESSION_TOOLTIP") then
+	if MobKillTrackerDB.options.showSessionInTooltip then
 		local session = SessionKills[npcID] or 0
 		if session > 0 then
 			rightText = rightText .. (" |cff66ccff(session %d)|r"):format(session)

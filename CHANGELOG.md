@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.8
+
+- Updated UI library (AlnUI 3)
+- Altered options menu
+
 ## 1.3.7
 
 - TOC update
