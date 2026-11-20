@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.9
+
+- Milestones changes for Forever
+
 ## 1.3.8
 
 - Updated UI library (AlnUI 3)

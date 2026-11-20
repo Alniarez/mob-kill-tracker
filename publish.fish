@@ -96,6 +96,12 @@ end
 
 # Changelog --------------------------------------------------------------------
 
+# the changes made since the last release become this version's
+if test -z "$(changelog_section $ver)"; and grep -qx '## Unreleased' CHANGELOG.md
+    sed -i "s/^## Unreleased\$/## $ver/" CHANGELOG.md
+    echo "CHANGELOG: Unreleased -> $ver"
+end
+
 if test -z "$(changelog_section $ver)"
     echo "No '## $ver' section in CHANGELOG.md. Type its lines, an empty line ends:"
     set -l lines

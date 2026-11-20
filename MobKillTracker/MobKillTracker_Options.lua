@@ -34,7 +34,6 @@ local function InitializeSettings()
 		options.showCreatureID = false
 	end
 
-	-- drawn on its own frame (canvas): addon options on Blizzard's settings rows get its Discord settings blocked
 	local page = AlnUI:CreateSettingsPage({ name = "MobKillTracker" })
 
 	page:AddCheckbox({

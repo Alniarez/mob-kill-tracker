@@ -8,20 +8,35 @@ local DEBUG = AlniDev and AlniDev.debug[ADDON_NAME] or false
 local SessionKills = {}
 
 -- Helper functions ------------------------------
-local function GetKillColor(total)
-	if total >= 2000 then
-		return 1.00, 0.50, 0.00 -- orange
-	elseif total >= 800 then
-		return 0.64, 0.21, 0.93 -- purple
-	elseif total >= 300 then
-		return 0.00, 0.44, 0.87 -- blue
-	elseif total >= 120 then
-		return 0.10, 0.80, 0.10 -- green
-	elseif total >= 30 then
-		return 1.00, 1.00, 1.00 -- white
-	else
-		return 0.60, 0.60, 0.60 -- gray
+-- kills needed for each color, lower on Forever
+local IS_FOREVER = WOW_PROJECT_CAMELOT ~= nil and WOW_PROJECT_ID == WOW_PROJECT_CAMELOT
+local KILL_TIERS = {
+	{ kills = IS_FOREVER and 600 or 2000, color = "ff8000" }, -- orange
+	{ kills = IS_FOREVER and 250 or 800, color = "a335ee" }, -- purple
+	{ kills = IS_FOREVER and 100 or 300, color = "0070dd" }, -- blue
+	{ kills = IS_FOREVER and 40 or 120, color = "1ece1e" }, -- green
+	{ kills = IS_FOREVER and 10 or 30, color = "ffffff" }, -- white
+}
+local GRAY = "999999"
+
+---The color of a kill count, as hex RRGGBB.
+---@param total number
+---@return string
+local function GetKillColorHex(total)
+	for _, tier in ipairs(KILL_TIERS) do
+		if total >= tier.kills then
+			return tier.color
+		end
 	end
+	return GRAY
+end
+
+---The color of a kill count.
+---@param total number
+---@return number r, number g, number b
+local function GetKillColor(total)
+	local hex = GetKillColorHex(total)
+	return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
 end
 
 local function GetNPCIDFromGUID(guid)
@@ -310,6 +325,7 @@ end
 
 -- MobKillTracker logic ------------------------------
 MobKillTracker = {}
+MobKillTracker.GetKillColorHex = GetKillColorHex
 function MobKillTracker.DeleteAllData()
 	MobKillTrackerDB.total = {}
 

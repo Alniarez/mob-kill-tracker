@@ -2,6 +2,16 @@
 
 Tracks how many times you have killed each mob and shows it on its tooltip: this character / all characters (this session). Session kills can be turned on in the settings.
 
+Kill counts are colored by how many there are:
+
+| Color | Kills | On Forever |
+|---|---|---|
+| White | 30 | 10 |
+| Green | 120 | 40 |
+| Blue | 300 | 100 |
+| Purple | 800 | 250 |
+| Orange | 2000 | 600 |
+
 Since Midnight it only works in the outdoor world.
 
 ## Commands

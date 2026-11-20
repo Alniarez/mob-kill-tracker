@@ -82,18 +82,8 @@ bottomLine:ClearAllPoints()
 bottomLine:SetPoint("BOTTOMLEFT", 18, 52)
 bottomLine:SetPoint("BOTTOMRIGHT", -18, 52)
 
---------------------------------------------------
--- Kill count color codes (matching main tracker tiers)
---------------------------------------------------
-
 local function KillColorCode(total)
-    if     total >= 2000 then return "|cffff8000"   -- orange
-    elseif total >= 800  then return "|cffa335ee"   -- purple
-    elseif total >= 300  then return "|cff0070dd"   -- blue
-    elseif total >= 120  then return "|cff1ece1e"   -- green
-    elseif total >= 30   then return "|cffffffff"   -- white
-    else                      return "|cff999999"   -- gray
-    end
+    return "|cff" .. MobKillTracker.GetKillColorHex(total)
 end
 
 --------------------------------------------------
